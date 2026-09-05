@@ -3,78 +3,70 @@ import os
 import requests
 from datetime import datetime, timezone
 
-TICKETSWAP_GRAPHQL_URL = "https://api.ticketswap.com/graphql"
+# Correcte publieke GraphQL endpoint van TicketSwap
+TICKETSWAP_API_URL = "https://api.ticketswap.com/graphql/public"
 
-# Mimic browser headers voor TicketSwap
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Content-Type": "application/json",
     "Accept": "*/*",
     "Origin": "https://www.ticketswap.com",
     "Referer": "https://www.ticketswap.com/event-tickets",
-    "x-client-type": "WEB",
-    "x-client-version": "1.0.0"
+    "x-client-type": "WEB"
 }
 
-# De actuele GraphQL query die de event-tickets pagina gebruikt
-QUERY = """
-query GetEventTicketsPage($first: Int, $after: String) {
-  popularEvents(first: $first, after: $after) {
-    pageInfo {
-      hasNextPage
-      endCursor
-    }
-    edges {
-      node {
-        id
-        title
-        slug
-        startDate
-        endDate
-        location {
-          id
-          name
-          city {
+# GraphQL Query met Persisted Query ID Hash van TicketSwap
+QUERY_PAYLOAD = {
+    "operationName": "GetPopularEvents",
+    "variables": {
+        "first": 50
+    },
+    "extensions": {
+        "persistedQuery": {
+            "version": 1,
+            "sha256Hash": "3d5f30cb70e28151c8e9b62a632df51c2d0f50868f0b7f8c050a417614d9b1bf"
+        }
+    },
+    "query": """
+    query GetPopularEvents($first: Int) {
+      popularEvents(first: $first) {
+        edges {
+          node {
             id
-            name
-            country {
-              id
+            title
+            slug
+            startDate
+            location {
               name
+              city {
+                name
+              }
             }
           }
         }
       }
     }
-  }
+    """
 }
-"""
 
 def fetch_ticketswap_events():
     today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     events = []
 
-    print("Feesten ophalen van TicketSwap...")
-
-    payload = {
-        "operationName": "GetEventTicketsPage",
-        "variables": {
-            "first": 50
-        },
-        "query": QUERY
-    }
+    print("Feesten ophalen via TicketSwap Public API...")
 
     try:
-        response = requests.post(TICKETSWAP_GRAPHQL_URL, json=payload, headers=HEADERS, timeout=20)
+        response = requests.post(TICKETSWAP_API_URL, json=QUERY_PAYLOAD, headers=HEADERS, timeout=20)
         print(f"HTTP Status Code: {response.status_code}")
 
         if response.status_code == 200:
             data = response.json()
-
+            
             if "errors" in data:
-                print(f"GraphQL Foutmeldingen: {data['errors']}")
+                print(f"GraphQL Errors: {data['errors']}")
 
             edges = data.get("data", {}).get("popularEvents", {}).get("edges", [])
-            print(f"Aantal evenementen ontvangen via API: {len(edges)}")
+            print(f"Aantal feesten ontvangen: {len(edges)}")
 
             for edge in edges:
                 node = edge.get("node", {})
@@ -102,12 +94,11 @@ def fetch_ticketswap_events():
                 })
 
         else:
-            print(f"Fout bij opvragen data: {response.status_code} - {response.text[:200]}")
+            print(f"Fout bij opvragen data. Response: {response.text[:200]}")
 
     except Exception as e:
-        print(f"Fout tijdens het scrapen van TicketSwap: {e}")
+        print(f"Fout bij verzoek: {e}")
 
-    # Ontdubbelen op ID en sorteren op datum
     unique_events = list({ev['id']: ev for ev in events}.values())
     unique_events.sort(key=lambda x: x.get('start_date') or '')
 
@@ -123,7 +114,7 @@ def fetch_ticketswap_events():
             "events": unique_events
         }, f, ensure_ascii=False, indent=2)
 
-    print(f"Data succesvol opgeslagen in {output_path}")
+    print(f"Data opgeslagen in {output_path}")
 
 if __name__ == "__main__":
     fetch_ticketswap_events()

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TicketSwap Events Overzicht</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #00b67a; /* TicketSwap groen */
+      --accent-hover: #009e6a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); padding: 2rem 1rem; }
+    
+    .container { max-width: 1000px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+    .updated { color: var(--text-muted); font-size: 0.9rem; }
+
+    .search-box { width: 100%; padding: 0.8rem 1rem; margin-bottom: 2rem; border-radius: 8px; border: 1px solid #334155; background-color: var(--card-bg); color: var(--text); font-size: 1rem; }
+    .search-box:focus { outline: 2px solid var(--accent); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; }
+    .card { background-color: var(--card-bg); border-radius: 12px; padding: 1.25rem; border: 1px solid #334155; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, border-color 0.2s; }
+    .card:hover { transform: translateY(-3px); border-color: var(--accent); }
+    
+    .card h3 { font-size: 1.1rem; margin-bottom: 0.5rem; line-height: 1.4; }
+    .card-info { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; }
+    .card-info div { margin-bottom: 0.25rem; }
+
+    .btn { display: inline-block; width: 100%; text-align: center; background-color: var(--accent); color: #fff; text-decoration: none; padding: 0.6rem; border-radius: 6px; font-weight: 600; font-size: 0.9rem; transition: background-color 0.2s; }
+    .btn:hover { background-color: var(--accent-hover); }
+
+    .no-results { text-align: center; color: var(--text-muted); grid-column: 1 / -1; padding: 3rem; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>TicketSwap Events Navigator</h1>
+    <div class="updated" id="status">Laden van evenementen...</div>
+  </header>
+
+  <input type="text" id="searchInput" class="search-box" placeholder="Zoek op evenement, stad of locatie...">
+
+  <div class="grid" id="eventsGrid"></div>
+</div>
+
+<script>
+  let allEvents = [];
+
+  async function loadEvents() {
+    try {
+      const response = await fetch('./data/events.json');
+      if (!response.ok) throw new Error("Kon data niet laden");
+      
+      const data = await response.json();
+      allEvents = data.events || [];
+      
+      document.getElementById('status').innerText = `Laatst bijgewerkt op: ${data.updated_at} \vert{} Totaal:${data.total} feesten`;
+      renderEvents(allEvents);
+    } catch (err) {
+      document.getElementById('status').innerText = "Fout bij het laden van evenementen.";
+      console.error(err);
+    }
+  }
+
+  function renderEvents(events) {
+    const grid = document.getElementById('eventsGrid');
+    grid.innerHTML = '';
+
+    if (events.length === 0) {
+      grid.innerHTML = '<div class="no-results">Geen evenementen gevonden.</div>';
+      return;
+    }
+
+    events.forEach(event => {
+      const dateStr = event.start_date ? new Date(event.start_date).toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Datum onbekend';
+      
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div>
+          <h3>${event.title}</h3>
+          <div class="card-info">
+            <div>📅 ${dateStr}</div>
+            <div>📍 ${event.venue} (${event.city})</div>
+          </div>
+        </div>
+        <a href="${event.url}" target="_blank" rel="noopener" class="btn">Bekijk op TicketSwap</a>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase();
+    const filtered = allEvents.filter(ev => 
+      ev.title.toLowerCase().includes(query) || 
+      ev.city.toLowerCase().includes(query) || 
+      ev.venue.toLowerCase().includes(query)
+    );
+    renderEvents(filtered);
+  });
+
+  loadEvents();
+</script>
+
+</body>
+</html>

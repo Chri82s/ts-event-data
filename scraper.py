@@ -1,8 +1,7 @@
 import json
 import os
 import re
-import requests
-from bs4 import BeautifulSoup
+import urllib.request
 from datetime import datetime, timezone
 
 TARGET_URL = "https://www.ticketswap.com/event-tickets"
@@ -17,54 +16,63 @@ def fetch_ticketswap_events():
     today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     events = []
 
-    print(f"Ophalen via TicketSwap HTML Webpage: {TARGET_URL}...")
+    print(f"Ophalen van TicketSwap-pagina: {TARGET_URL}...")
 
     try:
-        response = requests.get(TARGET_URL, headers=HEADERS, timeout=20)
-        print(f"HTTP Status Code: {response.status_code}")
+        req = urllib.request.Request(TARGET_URL, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=20) as response:
+            html_content = response.read().decode('utf-8')
+            print(f"HTTP Status Code: {response.status}")
 
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Extract JSON-LD blokken via Regex
+            json_ld_matches = re.findall(
+                r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', 
+                html_content, 
+                re.DOTALL
+            )
 
-            # 1. Probeer JSON-LD gestructureerde data op te halen
-            json_ld_scripts = soup.find_all("script", {"type": "application/ld+json"})
-            for script in json_ld_scripts:
-                if script.string:
-                    try:
-                        data = json.loads(script.string)
-                        items = data if isinstance(data, list) else [data]
-                        for item in items:
-                            if item.get("@type") in ["Event", "MusicEvent", "Festival"]:
-                                events.append({
-                                    "id": item.get("url", "").split("/")[-1] or item.get("name"),
-                                    "title": item.get("name"),
-                                    "url": item.get("url", TARGET_URL),
-                                    "start_date": item.get("startDate", ""),
-                                    "venue": item.get("location", {}).get("name", "Onbekend") if isinstance(item.get("location"), dict) else "Onbekend",
-                                    "city": item.get("location", {}).get("address", {}).get("addressLocality", "Nederland") if isinstance(item.get("location"), dict) else "Nederland"
-                                })
-                    except json.JSONDecodeError:
-                        continue
+            for match in json_ld_matches:
+                try:
+                    data = json.loads(match.strip())
+                    items = data if isinstance(data, list) else [data]
+                    for item in items:
+                        if isinstance(item, dict) and item.get("@type") in ["Event", "MusicEvent", "Festival"]:
+                            event_url = item.get("url", TARGET_URL)
+                            event_id = event_url.rstrip("/").split("/")[-1]
+                            
+                            location = item.get("location") or {}
+                            venue = location.get("name", "Onbekend") if isinstance(location, dict) else "Onbekend"
+                            city = "Nederland"
+                            if isinstance(location, dict) and isinstance(location.get("address"), dict):
+                                city = location.get("address").get("addressLocality", "Nederland")
 
-            # 2. Fallback: vind event links direct in de HTML structure
-            if not events:
-                for a_tag in soup.find_all("a", href=True):
-                    href = a_tag["href"]
-                    if "/event/" in href:
-                        title = a_tag.get_text(strip=True)
-                        if title and len(title) > 2:
-                            full_url = href if href.startswith("http") else f"https://www.ticketswap.com{href}"
                             events.append({
-                                "id": href.rstrip("/").split("/")[-1],
-                                "title": title,
-                                "url": full_url,
-                                "start_date": today_date,
-                                "venue": "TicketSwap Event",
-                                "city": "Nederland"
+                                "id": event_id,
+                                "title": item.get("name"),
+                                "url": event_url,
+                                "start_date": item.get("startDate", ""),
+                                "venue": venue,
+                                "city": city
                             })
+                except json.JSONDecodeError:
+                    continue
 
-        else:
-            print(f"Fout bij ophalen pagina. Status: {response.status_code}")
+            # Fallback: extract event links rechtstreeks uit de HTML
+            if not events:
+                event_links = re.findall(r'href=["\'](/event/[^"\'\?]+)["\']', html_content)
+                for link in set(event_links):
+                    parts = link.rstrip("/").split("/")
+                    if len(parts) >= 3:
+                        title_slug = parts[-2].replace("-", " ").title()
+                        event_id = parts[-1]
+                        events.append({
+                            "id": event_id,
+                            "title": title_slug,
+                            "url": f"https://www.ticketswap.com{link}",
+                            "start_date": today_date,
+                            "venue": "TicketSwap Event",
+                            "city": "Nederland"
+                        })
 
     except Exception as e:
         print(f"Fout tijdens het scrapen: {e}")

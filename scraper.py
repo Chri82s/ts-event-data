@@ -3,7 +3,6 @@ import os
 import requests
 from datetime import datetime, timezone
 
-# Correcte publieke GraphQL endpoint van TicketSwap
 TICKETSWAP_API_URL = "https://api.ticketswap.com/graphql/public"
 
 HEADERS = {
@@ -15,7 +14,7 @@ HEADERS = {
     "x-client-type": "WEB"
 }
 
-# GraphQL Query met Persisted Query ID Hash van TicketSwap
+# APQ query payload met versie 2
 QUERY_PAYLOAD = {
     "operationName": "GetPopularEvents",
     "variables": {
@@ -23,7 +22,7 @@ QUERY_PAYLOAD = {
     },
     "extensions": {
         "persistedQuery": {
-            "version": 1,
+            "version": 2,
             "sha256Hash": "3d5f30cb70e28151c8e9b62a632df51c2d0f50868f0b7f8c050a417614d9b1bf"
         }
     },

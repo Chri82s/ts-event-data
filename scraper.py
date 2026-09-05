@@ -1,87 +1,79 @@
 import json
 import os
-import re
 import urllib.request
+import urllib.parse
 from datetime import datetime, timezone
 
-TARGET_URL = "https://www.ticketswap.com/event-tickets"
+# Publieke REST API zoekroute van TicketSwap
+SEARCH_API_URL = "https://api.ticketswap.com/search/events"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7"
+    "Accept": "application/json",
+    "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Origin": "https://www.ticketswap.nl",
+    "Referer": "https://www.ticketswap.nl/"
 }
+
+# Zoektermen om een actueel aanbod van evenementen op te halen
+SEARCH_QUERIES = ["festival", "amsterdam", "rotterdam", "utrecht", "eindhoven", "dance"]
 
 def fetch_ticketswap_events():
     today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     events = []
 
-    print(f"Ophalen van TicketSwap-pagina: {TARGET_URL}...")
+    print("Feesten ophalen via TicketSwap Search Service...")
 
-    try:
-        req = urllib.request.Request(TARGET_URL, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=20) as response:
-            html_content = response.read().decode('utf-8')
-            print(f"HTTP Status Code: {response.status}")
+    for query in SEARCH_QUERIES:
+        params = urllib.parse.urlencode({"q": query})
+        full_url = f"{SEARCH_API_URL}?{params}"
 
-            # Extract JSON-LD blokken via Regex
-            json_ld_matches = re.findall(
-                r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', 
-                html_content, 
-                re.DOTALL
-            )
+        try:
+            req = urllib.request.Request(full_url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=15) as response:
+                print(f"Zoekterm '{query}' - HTTP Status Code: {response.status}")
+                
+                if response.status == 200:
+                    raw_data = response.read().decode('utf-8')
+                    data = json.loads(raw_data)
+                    
+                    # De API geeft een lijst of dict met 'events' of 'results' terug
+                    results = data if isinstance(data, list) else data.get("events", data.get("results", []))
 
-            for match in json_ld_matches:
-                try:
-                    data = json.loads(match.strip())
-                    items = data if isinstance(data, list) else [data]
-                    for item in items:
-                        if isinstance(item, dict) and item.get("@type") in ["Event", "MusicEvent", "Festival"]:
-                            event_url = item.get("url", TARGET_URL)
-                            event_id = event_url.rstrip("/").split("/")[-1]
-                            
-                            location = item.get("location") or {}
-                            venue = location.get("name", "Onbekend") if isinstance(location, dict) else "Onbekend"
-                            city = "Nederland"
-                            if isinstance(location, dict) and isinstance(location.get("address"), dict):
-                                city = location.get("address").get("addressLocality", "Nederland")
+                    for item in results:
+                        event_id = item.get("id")
+                        title = item.get("title") or item.get("name")
+                        slug = item.get("slug") or ""
+                        
+                        location = item.get("location") or {}
+                        venue = location.get("name", "Onbekende locatie") if isinstance(location, dict) else "Onbekende locatie"
+                        city = "Nederland"
+                        if isinstance(location, dict) and "city" in location:
+                            city_data = location.get("city")
+                            if isinstance(city_data, dict):
+                                city = city_data.get("name", "Nederland")
 
+                        start_date = item.get("startDate") or item.get("start_date") or today_date
+                        event_url = f"https://www.ticketswap.nl/event/{slug}/{event_id}" if slug else f"https://www.ticketswap.nl/event/{event_id}"
+
+                        if title and event_id:
                             events.append({
-                                "id": event_id,
-                                "title": item.get("name"),
+                                "id": str(event_id),
+                                "title": title,
                                 "url": event_url,
-                                "start_date": item.get("startDate", ""),
+                                "start_date": start_date,
                                 "venue": venue,
                                 "city": city
                             })
-                except json.JSONDecodeError:
-                    continue
 
-            # Fallback: extract event links rechtstreeks uit de HTML
-            if not events:
-                event_links = re.findall(r'href=["\'](/event/[^"\'\?]+)["\']', html_content)
-                for link in set(event_links):
-                    parts = link.rstrip("/").split("/")
-                    if len(parts) >= 3:
-                        title_slug = parts[-2].replace("-", " ").title()
-                        event_id = parts[-1]
-                        events.append({
-                            "id": event_id,
-                            "title": title_slug,
-                            "url": f"https://www.ticketswap.com{link}",
-                            "start_date": today_date,
-                            "venue": "TicketSwap Event",
-                            "city": "Nederland"
-                        })
+        except Exception as e:
+            print(f"Fout bij opvragen van zoekterm '{query}': {e}")
 
-    except Exception as e:
-        print(f"Fout tijdens het scrapen: {e}")
+    # Ontdubbelen op event ID
+    unique_events = list({ev['id']: ev for ev in events}.values())
+    unique_events.sort(key=lambda x: x.get('start_date') or '')
 
-    # Ontdubbelen op ID
-    unique_events = list({ev['id']: ev for ev in events if ev.get('id')}.values())
-    unique_events.sort(key=lambda x: x.get('title') or '')
-
-    print(f"\n--- Totaal unieke feesten gevonden: {len(unique_events)} ---")
+    print(f"\n--- Totaal unieke feesten verwerkt: {len(unique_events)} ---")
 
     os.makedirs("data", exist_ok=True)
     output_path = "data/events.json"
@@ -93,7 +85,7 @@ def fetch_ticketswap_events():
             "events": unique_events
         }, f, ensure_ascii=False, indent=2)
 
-    print(f"Data opgeslagen in {output_path}")
+    print(f"Data succesvol opgeslagen in {output_path}")
 
 if __name__ == "__main__":
     fetch_ticketswap_events()

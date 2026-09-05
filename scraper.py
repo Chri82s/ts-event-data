@@ -10,43 +10,31 @@ HEADERS = {
     "Content-Type": "application/json",
     "Accept": "*/*",
     "Origin": "https://www.ticketswap.com",
-    "Referer": "https://www.ticketswap.com/event-tickets",
-    "x-client-type": "WEB"
+    "Referer": "https://www.ticketswap.com/",
+    "x-client-type": "WEB",
+    "x-client-version": "1.0.0"
 }
 
-# APQ query payload met versie 2
-QUERY_PAYLOAD = {
-    "operationName": "GetPopularEvents",
-    "variables": {
-        "first": 50
-    },
-    "extensions": {
-        "persistedQuery": {
-            "version": 2,
-            "sha256Hash": "3d5f30cb70e28151c8e9b62a632df51c2d0f50868f0b7f8c050a417614d9b1bf"
-        }
-    },
-    "query": """
-    query GetPopularEvents($first: Int) {
-      popularEvents(first: $first) {
-        edges {
-          node {
-            id
-            title
-            slug
-            startDate
-            location {
-              name
-              city {
-                name
-              }
-            }
+QUERY = """
+query GetPopularEvents($first: Int) {
+  popularEvents(first: $first) {
+    edges {
+      node {
+        id
+        title
+        slug
+        startDate
+        location {
+          name
+          city {
+            name
           }
         }
       }
     }
-    """
+  }
 }
+"""
 
 def fetch_ticketswap_events():
     today_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
@@ -54,8 +42,16 @@ def fetch_ticketswap_events():
 
     print("Feesten ophalen via TicketSwap Public API...")
 
+    payload = {
+        "operationName": "GetPopularEvents",
+        "variables": {
+            "first": 50
+        },
+        "query": QUERY
+    }
+
     try:
-        response = requests.post(TICKETSWAP_API_URL, json=QUERY_PAYLOAD, headers=HEADERS, timeout=20)
+        response = requests.post(TICKETSWAP_API_URL, json=payload, headers=HEADERS, timeout=20)
         print(f"HTTP Status Code: {response.status_code}")
 
         if response.status_code == 200:
